@@ -20,11 +20,12 @@ with gr.Blocks() as demo:
         slider_scroll = gr.Slider(label="Scroll",scale=13)
         slider_prev = gr.Button("◀",min_width=80,scale=1)
         slider_next = gr.Button("▶",min_width=80,scale=1)
-        slider_zoom = gr.Slider(minimum = 1, maximum = 3,step=1,label="Zoom",scale=5)
+        slider_zoom = gr.Slider(minimum = 1, maximum = 3,step=0.5,label="Zoom",scale=5)
     
     plot = gr.Plot()
-    slider_prev.click(lambda x:plot_generator.prev(x),inputs=plot,outputs=plot)
-    slider_next.click(lambda x:plot_generator.next(x),inputs=plot,outputs=plot)
+    plot2 = gr.Plot()
+    slider_prev.click(lambda x,y:plot_generator.prev(x,y),inputs=[plot,plot2],outputs=[plot,plot2])
+    slider_next.click(lambda x,y:plot_generator.next(x,y),inputs=[plot,plot2],outputs=[plot,plot2])
     
     @data_button.click(inputs=data_text,outputs=data_dropdown_dir)
     def glob_p0n(path):
@@ -41,26 +42,29 @@ with gr.Blocks() as demo:
         ret = glob.glob("*\*.*",root_dir=root)
         return gr.Dropdown(choices=ret,interactive=True,scale=6,label="Select file")
 
-    @data_dropdown_file.select(inputs=[data_text,data_dropdown_dir,data_dropdown_file,plot],outputs=[slider_scroll,slider_zoom, plot])
-    def update_plot(dir1,dir2,dir3,plot):
-        if plot != None:
-            plt.close(plot['plot'])
+    @data_dropdown_file.select(inputs=[data_text,data_dropdown_dir,data_dropdown_file,plot,plot2],outputs=[slider_scroll,slider_zoom, plot,plot2])
+    def update_plot(dir1,dir2,dir3,plot,plot2):
+        if plot != None or plot2 != None:
+            plt.clf()
+            plt.close()
+            
         path = os.path.join(dir1,dir2,dir3)
         sig = np.load(path)
         plot_generator.set_signal(sig)
         # print(sig.dtype,sig.shape)
         # print(sig[:10])
         
-        return gr.Slider(minimum=0,maximum =len(sig), label="Scroll",scale=7),gr.Slider(minimum=1,maximum=int(np.log10(len(sig))+1),step=1,label="Zoom",scale=3),plot_generator.plot()
+        return gr.Slider(minimum=0,maximum =len(sig), label="Scroll",scale=7),gr.Slider(minimum=1,maximum=int(np.log10(len(sig))+1),step=0.5,label="Zoom",scale=3),*plot_generator.plot()
     
-    @slider_scroll.release(inputs=[slider_scroll,plot],outputs=plot)
-    def scroll_plot(t,plot):
+    @slider_scroll.release(inputs=[slider_scroll,plot,plot2],outputs=[plot,plot2])
+    def scroll_plot(t,plot,plot2):
         # print(plot.keys())
-        return plot_generator.set_scroll(plot,t)
-    @slider_zoom.release(inputs=[slider_zoom,plot],outputs=plot)
-    def zoom_plot(x,plot):
-        return plot_generator.set_zoom(plot,x)
-        
+        p1,p2=plot_generator.set_scroll([plot,plot2],t)
+        return p1,p2
+    @slider_zoom.release(inputs=[slider_zoom,plot,plot2],outputs=[plot,plot2])
+    def zoom_plot(x,plot,plot2):
+        p1,p2= plot_generator.set_zoom([plot,plot2],x)
+        return p1,p2
     # button = gr.Radio(label="Plot type",
     #                   choices=['scatter_plot', 'heatmap', 'us_map',
     #                            'interactive_barplot', "radial", "multiline"], value='scatter_plot')
