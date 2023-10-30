@@ -34,10 +34,13 @@ class InteractivePlot():
     
     
     def calc_peaks(self,w_peaks=5):
-        self.ppg_peaks, pinfo_ppg = find_peaks(self.sig[:,0],plateau_size=1)
-        self.abp_peaks, pinfo_abp = find_peaks(self.sig[:,1],plateau_size=1)
+        self.abp_peaks, pinfo_abp = find_peaks(self.sig[:,0],plateau_size=1)
+        self.abp_peaks_ex, pinfo_abp_ex= find_peaks(self.sig[:,0],width=4,prominence=0.5,distance=35,plateau_size=1)
+        self.ppg_peaks, pinfo_ppg = find_peaks(self.sig[:,1],plateau_size=1)
         self.ppg_plateau = self.ppg_peaks[np.where(pinfo_ppg['plateau_sizes']>w_peaks)[0]]
-        self.abp_plateau = self.abp_peaks[np.where(pinfo_abp['plateau_sizes']>w_peaks)[0]]
+        self.ppg_plateau = self.ppg_peaks[np.where(pinfo_ppg['plateau_sizes']>w_peaks)[0]]
+        self.abp_plateau= self.abp_peaks[np.where(pinfo_abp['plateau_sizes']>w_peaks)[0]]
+        self.abp_plateau_ex= self.abp_peaks_ex[np.where(pinfo_abp_ex['plateau_sizes']>w_peaks)[0]]
         print(self.ppg_peaks.shape,self.abp_peaks.shape)
         
     def set_scroll(self,plots,t):
@@ -82,14 +85,17 @@ class InteractivePlot():
         p_ppg = self.ppg_peaks[(self.xstart<=self.ppg_peaks) & (self.ppg_peaks<self.xend)]
         pl_ppg = self.ppg_plateau[(self.xstart<=self.ppg_plateau) & (self.ppg_plateau<self.xend)]
         p_abp = self.abp_peaks[(self.xstart<=self.abp_peaks) & (self.abp_peaks<self.xend)]
+        p_abp_ex = self.abp_peaks_ex[(self.xstart<=self.abp_peaks_ex) & (self.abp_peaks_ex<self.xend)]
         pl_abp = self.abp_plateau[(self.xstart<=self.abp_plateau) & (self.abp_plateau<self.xend)]
+        pl_abp_ex = self.abp_plateau_ex[(self.xstart<=self.abp_plateau_ex) & (self.abp_plateau_ex<self.xend)]
         axes[0].plot(self.range[self.xstart:self.xend],self.sig[self.xstart:self.xend, 0], 'black',linewidth=1)
-        axes[0].scatter(self.range[p_ppg], self.sig[p_ppg,0], color='red',s=24)
-        axes[0].scatter(self.range[pl_ppg], self.sig[pl_ppg,0], color='blue',s=24)
+        axes[0].scatter(self.range[p_abp], self.sig[p_abp,0], color='red',s=24)
+        axes[0].scatter(self.range[pl_abp], self.sig[pl_abp,0], color='blue',s=24)
+        axes[0].scatter(self.range[p_abp_ex], self.sig[p_abp_ex,0], color='green',s=24)
 
         axes[1].plot(self.range[self.xstart:self.xend],self.sig[self.xstart:self.xend, 1], 'black',linewidth=1)
-        axes[1].scatter(self.range[p_abp], self.sig[p_abp, 1], color='red',s=24)
-        axes[1].scatter(self.range[pl_abp], self.sig[pl_abp, 1], color='blue',s=24)
+        axes[1].scatter(self.range[p_ppg], self.sig[p_ppg, 1], color='red',s=24)
+        axes[1].scatter(self.range[pl_ppg], self.sig[pl_ppg, 1], color='blue',s=24)
         
         axes[0].set_ylabel("ABP/mmHg")
         axes[1].set_ylabel("PPG/PU")
