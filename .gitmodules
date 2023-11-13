@@ -1,0 +1,9 @@
+[submodule "repos/Palette"]
+	path = repos/Palette
+	url = https://github.com/ax6000/Palette.git
+[submodule "repos/pytorch-CycleGAN-and-pix2pix"]
+	path = repos/pytorch-CycleGAN-and-pix2pix
+	url = https://github.com/junyanz/pytorch-CycleGAN-and-pix2pix.git
+[submodule "repos/latent-diffusion"]
+	path = repos/latent-diffusion
+	url = https://github.com/ax6000/latent-diffusion.git
