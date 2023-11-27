@@ -93,3 +93,6 @@ target/
 
 # gradio webui
 src/webui/flagged/
+
+#
+reports/

@@ -21,7 +21,7 @@ def filter_ppg(sig):
         return None  
     notnan= ~np.isnan(sig[:,1]) 
     s = np.sum(notnan)
-    if s < 125*120:
+    if s < 125*60:
         logging.info(f"invalid because of short valid signal: {s}")
         return None
     
@@ -32,8 +32,8 @@ def filter_ppg(sig):
     return sig
 
 def main():
-    DATA_DIR = r"F:\minowa\BloodPressureEstimation\data\raw\ppgabp\p00"
-    OUTPUT_DIR = r"F:\minowa\BloodPressureEstimation\data\processed\npy\1030\p00"
+    DATA_DIR = r"F:\minowa\BloodPressureEstimation\data\raw\BPDataset\p00"
+    OUTPUT_DIR = r"F:\minowa\BloodPressureEstimation\data\processed\BP_npy\1121\p00"
     logging.basicConfig(filename=os.path.join(OUTPUT_DIR,'output.log'), level=logging.INFO)
     files = glob.glob("**\*.npy",recursive=True,root_dir=DATA_DIR)
     cnt = 0
