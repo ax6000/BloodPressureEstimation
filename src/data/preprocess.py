@@ -82,10 +82,10 @@ def flat(sig,plot=False,xfrom=0,xlen=100000):
     is_invalid,flat_locs_ppg,flat_locs_abp=detect_flat(sig,w_flat,t_flat)
     if is_invalid:
         return None
-    # 3
+    # 3 find peaks, calcurate flat peaks rate
     peaks_ppg, peaks_info_ppg = signal.find_peaks(sig[:,0],distance=35,plateau_size=1)
     peaks_abp, peaks_info_abp = signal.find_peaks(sig[:,1],distance=35,plateau_size=1)
-    # 4
+    # 4 delete data if too much flat lines/peaks
     if len(peaks_info_ppg['plateau_sizes']) == 0 or len(peaks_info_abp['plateau_sizes']) == 0:
         return None
     len_data=len(sig)
@@ -95,10 +95,10 @@ def flat(sig,plot=False,xfrom=0,xlen=100000):
     if per_abp > t_peaks or per_ppg > t_peaks:
         logging.info(f"invalid because of flat lines: {per_ppg}, {per_abp}")
         return None
-    # 5
+    # 5 find valleys
     valleys_ppg, _ = signal.find_peaks(-sig[:,0],distance=35)
     valleys_abp, _ = signal.find_peaks(-sig[:,1],distance=35)
-    # 6 nan
+    # 6 fill valley-valley with nan if flat line exists
     # connect_valley_locs_???[i] = True if there's flat line between valleys[i] and valleys[i+1] 
     # ppg
     connect_valley_locs_ppg = np.zeros_like(valleys_ppg)

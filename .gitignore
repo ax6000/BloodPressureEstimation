@@ -96,3 +96,6 @@ src/webui/flagged/
 
 #
 reports/
+
+notebooks/wandb
+tensorboardX
