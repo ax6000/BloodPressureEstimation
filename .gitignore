@@ -98,4 +98,5 @@ src/webui/flagged/
 reports/
 
 notebooks/wandb
+notebooks/outputs
 tensorboardX

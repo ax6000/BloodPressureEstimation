@@ -7,3 +7,6 @@
 [submodule "repos/latent-diffusion"]
 	path = repos/latent-diffusion
 	url = https://github.com/ax6000/latent-diffusion.git
+[submodule "repos/SynDiff"]
+	path = repos/SynDiff
+	url = https://github.com/ax6000/SynDiff.git
