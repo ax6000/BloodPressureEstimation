@@ -10,3 +10,6 @@
 [submodule "repos/SynDiff"]
 	path = repos/SynDiff
 	url = https://github.com/ax6000/SynDiff.git
+[submodule "repos/DiT"]
+	path = repos/DiT
+	url = https://github.com/ax6000/DiT.git
