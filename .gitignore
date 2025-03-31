@@ -98,5 +98,9 @@ src/webui/flagged/
 reports/
 
 notebooks/wandb
+notebooks/Autoviz_Plots
+notebooks/BP_regression/wandb
 notebooks/outputs
 tensorboardX
+.history
+*.mat
