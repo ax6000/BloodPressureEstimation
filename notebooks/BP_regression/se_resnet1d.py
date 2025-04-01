@@ -24,9 +24,9 @@ class SELayer(nn.Module):
         )
 
     def forward(self, x):
-        b, c, _, _ = x.size()
+        b, c, _ = x.size()
         y = self.avg_pool(x).view(b, c)
-        y = self.fc(y).view(b, c, 1, 1)
+        y = self.fc(y).view(b, c, 1)
         return x * y.expand_as(x)
 
 def conv3x3(in_planes, out_planes, stride=1):
@@ -500,6 +500,7 @@ class ResNet1D(nn.Module):
         self.layer2 = self._make_layer(block, 128, layers[1], stride=2, dilate=replace_stride_with_dilation[0])
         self.layer3 = self._make_layer(block, 256, layers[2], stride=2, dilate=replace_stride_with_dilation[1])
         self.layer4 = self._make_layer(block, 512, layers[3], stride=2, dilate=replace_stride_with_dilation[2])
+        self.dropout = nn.Dropout(0.3)
         self.avgpool = nn.AdaptiveAvgPool1d((1))
         self.fc = nn.Linear(512 * block.expansion, num_classes)
 
@@ -575,6 +576,7 @@ class ResNet1D(nn.Module):
 
         x = self.avgpool(x)
         x = torch.flatten(x, 1)
+        x = self.dropout(x)
         x = self.fc(x)
 
         return x
