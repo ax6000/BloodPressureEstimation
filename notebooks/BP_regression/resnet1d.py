@@ -295,3 +295,5 @@ class ResNet1D(nn.Module):
             print('softmax', out.shape)
         
         return out
+    
+    

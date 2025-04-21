@@ -1,0 +1,26 @@
+defaults:
+  - /model/resnet18
+  - /data/BPDataset
+  - /network/base_network
+  - _self_
+data:
+  train_dataset:
+    data_len: 1000
+  val_dataset:
+    data_len: 200
+  test_dataset:
+    data_len: 200
+
+network:
+  batch_size: 64
+  optimizer:
+    _target_: torch.optim.Adam
+    lr: 1e-5
+    weight_decay: 0
+  scheduler:
+    _target_: transformers.optimization.get_cosine_schedule_with_warmup
+  ckpt_path: ../outputs/resnet/0418_test
+  early_stopping: 
+    patience: 2
+  resume: false
+

@@ -1,0 +1,11 @@
+#
+_target_: hydra_BPClassification.execute_tasks
+ #${trainer}
+trainer: 
+  _target_: hydra_BPClassification.BP_Trainer
+  config: ${_run}
+tasks:
+  - _target_: hydra_BPClassification.call_train
+    trainer: #${trainer}
+  - _target_: hydra_BPClassification.call_test
+    trainer: #${trainer}
