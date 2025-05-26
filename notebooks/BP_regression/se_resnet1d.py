@@ -114,7 +114,7 @@ class SEBottleneck(nn.Module):
         return out
 
 
-def se_resnet18(num_classes=1_000,):
+def se_resnet18(num_classes=1_000,**kwargs):
     """Constructs a ResNet-18 model.
 
     Args:
