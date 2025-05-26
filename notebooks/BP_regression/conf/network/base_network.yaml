@@ -1,0 +1,24 @@
+batch_size: 64
+epochs: 100
+min_epochs: 10
+log_interval: 10
+logger:
+  _target_: hydra_BPClassification.BP_Logger
+optimizer:
+  _target_: torch.optim.Adam
+  lr: 1e-5
+  weight_decay: 0
+criterion:
+  _target_: torch.nn.CrossEntropyLoss
+scheduler:
+  _target_: transformers.optimization.get_linear_schedule_with_warmup
+  optimizer: #
+  num_warmup_steps: 0
+  num_training_steps: 1000
+ckpt_path: ../outputs/_test
+early_stopping: 
+  _target_: hydra_utils.EarlyStopping
+  path: ${_run.network.ckpt_path}
+  patience: 10
+resume: false
+fold: 5

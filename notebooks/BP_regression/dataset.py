@@ -4,7 +4,7 @@ from torch.utils.data import  Dataset
 import torch
 
 class BPDataset(Dataset):
-    def __init__(self, data_dir,cv=False,fold=None,train=True):
+    def __init__(self, data_dir,cv=False,fold=None,train=True,data_len=-1):
         # Load data
         if train:
             if cv:
@@ -45,6 +45,9 @@ class BPDataset(Dataset):
             # self.x = np.load(f'{data_dir}/test_2.npy')[:, 1, :].reshape(-1,1,1250)  # Shape: (-1, 1250)
             # self.y = np.load(f'{data_dir}/test_sbp_2labels.npy')  # Shape: (-1,)
         # Convert to torch tensors
+        if data_len != -1:
+            self.x = self.x[:min(data_len,len(self.x))]
+            self.y = self.y[:min(data_len,len(self.y))]
         self.x = torch.FloatTensor(self.x)
         self.y = torch.LongTensor(self.y)
         print(self.x.shape,self.y.shape)

@@ -1,0 +1,9 @@
+_target_: se_resnet1d.resnet18
+# pretrained: true
+num_classes: 2
+# input_size: [1,1250]
+in_channels: 1
+dropout: 0.5
+# use_fc: true
+# use_bn: true
+

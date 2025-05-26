@@ -13,3 +13,6 @@
 [submodule "repos/DiT"]
 	path = repos/DiT
 	url = https://github.com/ax6000/DiT.git
+[submodule "repos/hydra-bp-classifier"]
+	path = repos/hydra-bp-classifier
+	url = https://github.com/ax6000/hydra-bp-classifier.git

@@ -1,0 +1,4 @@
+defaults:
+  - _run: run0
+  - other: wandb
+  - task: BPClassification

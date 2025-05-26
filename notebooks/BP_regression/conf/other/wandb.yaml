@@ -1,0 +1,3 @@
+wandb:
+    project: BP_regression
+    entity: bsa_mh
