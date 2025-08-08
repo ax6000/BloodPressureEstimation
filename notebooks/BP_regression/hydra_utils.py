@@ -4,7 +4,6 @@ import numpy as np
 import torch
 from omegaconf import OmegaConf
 import random
-import threading
 
 def torch_fix_seed(seed: int = 42) -> None:
     random.seed(seed)
@@ -42,41 +41,19 @@ def get_obj_from_str(string, reload=False):
         importlib.reload(module_imp)
     return getattr(importlib.import_module(module, package=None), cls)
 
-class TimeoutException(Exception):
-    pass
-
-def input_with_timeout(prompt, timeout):
-    def timeout_handler():
-        raise TimeoutException("No response received within the timeout period.")
-
-    timer = threading.Timer(timeout, timeout_handler)
-    timer.start()
-    try:
-        return input(prompt)
-    finally:
-        timer.cancel()
-
 def output_warning(config):
-    try:
-        # 'output_path'が存在する場合
-        if os.path.exists(config.network.ckpt_path):
-            # ユーザーに確認を求める（enterを押したらyes）
-            confirmation = input_with_timeout(
-                f"Warning: The output path {config.network.ckpt_path} already exists. Do you want to continue? Press Enter to continue or press Escape to abort: ",
-                timeout=600,  # 600 seconds = 10 minutes
-            ).strip().lower()
-            
-            # 入力が空（Enter）が押された場合は続行、それ以外はエラー
-            if confirmation == "" or confirmation == "y":
-                print("Proceeding with the operation...")
-            elif confirmation == "\x1b":  # Escape key
-                raise ValueError("Operation aborted by pressing Escape.")
-            else:
-                raise ValueError("Operation aborted by the user.")
+    # 'output_path'が存在する場合
+    if os.path.exists(config.network.ckpt_path):
+        # ユーザーに確認を求める（enterを押したらyes）
+        confirmation = input(f"Warning: The output path {config.network.ckpt_path} already exists. Do you want to continue? Press Enter to continue: ").strip().lower()
+        
+        # 入力が空（Enter）が押された場合は続行、それ以外はエラー
+        if confirmation == "" or confirmation == "y":
+            print("Proceeding with the operation...")
         else:
-            print(f"The output path {config.network.ckpt_path} does not exist. Proceeding...")
-    except TimeoutException:
-        raise TimeoutError("No response received within 10 minutes.")
+            raise ValueError("Operation aborted by the user.")
+    else:
+        print(f"The output path {config.network.ckpt_path} does not exist. Proceeding...")
 
 def compute_class_weights(labels):
 # クラスごとのサンプル数をカウント

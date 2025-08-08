@@ -692,7 +692,7 @@ class ResNet1D_Small(nn.Module):
             norm_layer = nn.BatchNorm1d
         self._norm_layer = norm_layer
 
-        self.inplanes = 32
+        self.inplanes = 64
         self.dilation = 1
         if replace_stride_with_dilation is None:
             # each element in the tuple indicates if we should replace
@@ -705,7 +705,7 @@ class ResNet1D_Small(nn.Module):
             )
         self.groups = groups
         self.base_width = width_per_group
-        self.conv1 = nn.Conv1d(in_channels, self.inplanes, kernel_size=64, stride=2, padding=3, bias=False)
+        self.conv1 = nn.Conv1d(in_channels, self.inplanes, kernel_size=11, stride=2, padding=3, bias=False)
         self.bn1 = norm_layer(self.inplanes)
         self.relu = nn.ReLU(inplace=True)
         self.maxpool = nn.MaxPool1d(kernel_size=3, stride=2, padding=1)

@@ -4,7 +4,7 @@ import wandb
 import os
 from hydra_utils import torch_fix_seed,output_warning
 from hydra.utils import instantiate,call
-# from hydra_BPClassification import *
+from hydra_BPClassification import *
 # モデルを変えて連続で実行する
 
 # run selected function  

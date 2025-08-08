@@ -195,7 +195,7 @@ def extract_cycle_check(sig, fs, pk_th=0.6, remove_start_end = True):
     return cycles, peaks_norm, flag1, flag2, new_peaks, valleys
 
 
-def extract_feat_cycle(cycles, peaks_norm, fs):
+def extract_feat_cycle(cycles, peaks_norm, fs,mean=True):
     """
     Extracts the time-based features of each cycle and ouputs their average.
 
@@ -222,14 +222,23 @@ def extract_feat_cycle(cycles, peaks_norm, fs):
     for c, p in zip(cycles, peaks_norm):
         # try:
         feat_name,feat= extract_temp_feat(c, p, fs)
+        feat_name = np.append(feat_name, 'cycle_zero')  # append cycle length to the feature name
+        # append a zero to the end of the feature name
+        feat = np.append(feat, c[0])  # append a zero to the end of the feature
         feats.append(feat)
         # except Exception as e:
         #     print("Cycle ignored;",e)
 
-    if len(feats)>0: feats = np.vstack(feats).mean(axis=0)
-    else: feats = np.array([])
+    if len(feats)>0:
+        if mean:
+            feats = np.vstack(feats).mean(axis=0)
+        else:
+            feats = np.vstack(feats)
+    else:
+        feats = np.array([])
         
     return feat_name, feats
+
 
 
 def extract_feat_original(sig, fs, filtered=True, remove_start_end=True):
