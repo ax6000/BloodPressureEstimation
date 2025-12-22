@@ -16,3 +16,6 @@
 [submodule "repos/hydra-bp-classifier"]
 	path = repos/hydra-bp-classifier
 	url = https://github.com/ax6000/hydra-bp-classifier.git
+[submodule "repos/PPG-BP-Analysis"]
+	path = repos/PPG-BP-Analysis
+	url = https://github.com/lirus7/PPG-BP-Analysis.git
