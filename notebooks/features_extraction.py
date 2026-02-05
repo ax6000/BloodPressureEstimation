@@ -4,7 +4,7 @@ This module includes functions and classes to extract different features from PP
 '''
 
 import numpy as np
-from pyampd.ampd import find_peaks
+import pyampd
 import scipy.signal
 import copy
 
@@ -43,8 +43,8 @@ def _compute_cyle_pks_vlys(sig, fs, pk_th=0.6, remove_start_end = True):
         Indices of the valleys of the signal waveform.
     """
 
-    peaks = find_peaks(sig, scale=int(fs))
-    valleys = find_peaks(sig.max()-sig, scale=int(fs))
+    peaks = pyampd.ampd.find_peaks(sig, scale=int(fs))
+    valleys = pyampd.ampd.find_peaks(sig.max()-sig, scale=int(fs))
 
     flag1, flag2 = False, False
     
@@ -195,7 +195,7 @@ def extract_cycle_check(sig, fs, pk_th=0.6, remove_start_end = True):
     return cycles, peaks_norm, flag1, flag2, new_peaks, valleys
 
 
-def extract_feat_cycle(cycles, peaks_norm, fs,mean=True):
+def extract_feat_cycle(cycles, peaks_norm, fs,mean=True,ver2=False):
     """
     Extracts the time-based features of each cycle and ouputs their average.
 
@@ -221,19 +221,38 @@ def extract_feat_cycle(cycles, peaks_norm, fs,mean=True):
 
     for c, p in zip(cycles, peaks_norm):
         # try:
-        feat_name,feat= extract_temp_feat(c, p, fs)
-        feat_name = np.append(feat_name, 'cycle_zero')  # append cycle length to the feature name
+        feat_name,feat= extract_temp_feat(c, p, fs,ver2=ver2)
         # append a zero to the end of the feature name
         feat = np.append(feat, c[0])  # append a zero to the end of the feature
+        # nan_cols = ['apg_a', 'apg_b', 'apg_c', 'apg_d', 'apg_e']
+        nan_idx = [55, 56, 57, 58, 59]
+        # raise Exception(str(nan_idx))
+        # t_cols = ['T_b', 'T_c', 'T_d', 'T_e']
+        t_idx = [74, 75, 76, 77]
+        # raise Exception(str(t_idx))
+        n_abcde = (feat[t_idx] < 0).any()
+        nan_abcde =  np.isnan(feat[nan_idx]).any()
+        feat = np.append(feat, n_abcde)  # append number of cycles
+        feat = np.append(feat, nan_abcde)  # append number of cycles
         feats.append(feat)
+        
+        feat_name = np.append(feat_name, 'cycle_zero')
+        feat_name = np.append(feat_name, 'n_abcde')
+        feat_name = np.append(feat_name, 'n_nan_cycle')  # append cycle length to the feature name
+        
         # except Exception as e:
         #     print("Cycle ignored;",e)
-
+    
     if len(feats)>0:
         if mean:
-            feats = np.vstack(feats).mean(axis=0)
+            feats_tmp = np.vstack(feats)
+            feats = np.nanmean(feats_tmp, axis=0)
+            feats[-3:] = np.nansum(feats_tmp[:,-3:], axis=0)  # sum n_cycle and n_abcde
+            feat_name= np.append(feat_name, 'n_cycle')
+            feats = np.append(feats, len(feats_tmp))  # append number of cycles
         else:
             feats = np.vstack(feats)
+
     else:
         feats = np.array([])
         
@@ -341,8 +360,8 @@ def vpg_points(vpg, peak):
         Location (index) in VPG of z.
     """
     
-    pks = find_peaks(vpg)
-    vlys = find_peaks(-vpg)
+    pks = pyampd.ampd.find_peaks(vpg)
+    vlys = pyampd.ampd.find_peaks(-vpg)
     
     #Time from cycle start to first peak in VPG (steepest point)
     #steepest point == max value between start and peak
@@ -410,15 +429,20 @@ def apg_points(apg, peak, w, y, z):
     a = b = c = d = e = 0
     
     #Limit the search to 60% of the cycle len
-    pks = find_peaks(apg[:int(len(apg)*0.6)])
+    pks = pyampd.ampd.find_peaks(apg[:int(len(apg)*0.6)])
     vly, _ = scipy.signal.find_peaks(-apg[:int(len(apg)*0.6)])
     
     if len(pks) < 1 or len(vly) < 1: 
         return a, b, c, d, e
     
     #### compute 'a' as the first peak of apg, if not max val before peak
+  
+    
+    
+    
     #a = np.argmax(apg[0:peak])
     a = pks[0]
+    
     if a > peak:
         a = np.argmax(apg[0:peak])
     else:
@@ -482,8 +506,479 @@ def apg_points(apg, peak, w, y, z):
     
     return a, b, c, d, e
 
+import numpy as np
+from scipy import signal
+from scipy.signal import find_peaks
 
-def extract_apg_feat(cycle, vpg, peak, w, y, z, fs):
+# -------------------------
+# utility (classと同じ)
+# -------------------------
+def zerocrossing(x):
+    """Find zero crossing points in signal x (class版と同じ)"""
+    inew = 0
+    r = x
+    loc = []
+    for ch in range(1, len(r)):
+        if ((r[ch-1] < 0 and r[ch] > 0) or
+            (r[ch-1] > 0 and r[ch] < 0)):
+            loc.append(ch)
+            inew += 1
+    return np.array(loc, dtype=int)
+
+
+# ============================================================
+# 1) VPG points (PlotButtonPushedの該当部分をほぼコピー)
+# ============================================================
+def vpg_points2(
+    vpg,
+    peak,
+    *,
+    prominence_max=0.2/1000,
+    prominence_min=0.2/1000,
+    distance=7,
+    require_two_maxima=True,
+    return_debug=False,
+):
+    """
+    Extract VPG or FDPPG interest points:
+        w: maximum value between start and peak, same as Steepest
+        y: relevant valley after w (after peak), same as NegSteepest
+        z: maximum value after w with limit search, peak after y, same as TdiaRise
+
+    ※元クラスの PlotButtonPushed 内のVPG peak検出〜 w,y,z割当を最大限維持
+
+    Parameters
+    ----------
+    vpg : array
+        VPG or FDPPG signal waveform.
+    peak: int
+        Index of the systolic peak. (ここでは保持するだけ。実際のロジックはクラス同様 vpg peaks 主導)
+    prominence_max, prominence_min, distance: find_peaksのパラメータ
+    require_two_maxima: Trueなら最大ピークが2個未満で例外
+    return_debug: Trueならピーク配列も返す
+
+    Returns
+    -------
+    w, y, z : int
+        VPG上のインデックス
+    (optional) debug dict
+    """
+    vpg = np.asarray(vpg)
+
+    # Find peaks for VPG（クラスと同じ）
+    VPG_peaks_max, _ = scipy.signal.find_peaks(vpg, prominence=prominence_max, distance=distance)
+    VPG_peaks_min, _ = scipy.signal.find_peaks(-vpg, prominence=prominence_min, distance=distance)
+    # Handle close points in APG（←コメントはAPGになってるけどクラス通り）
+    if len(VPG_peaks_min) > 1 and len(VPG_peaks_max) > 0:
+        if VPG_peaks_min[0] < VPG_peaks_max[0]:
+            VPG_peaks_min = VPG_peaks_min[1:]
+
+    if len(VPG_peaks_max) == 0:
+        # if require_two_maxima:
+        #     raise ValueError("Not enough VPG maxima points (0).")
+        w = y = z = None
+        if return_debug:
+            return w, y, z, {"VPG_peaks_max": VPG_peaks_max, "VPG_peaks_min": VPG_peaks_min}
+        return w, y, z
+
+    vpg_max_idx = np.argmax(vpg[VPG_peaks_max])
+    # print("VPG peaks max:", VPG_peaks_max,vpg_max_idx)
+    if vpg_max_idx > 0:
+        VPG_peaks_max = VPG_peaks_max[vpg_max_idx:]
+
+    if len(VPG_peaks_max) < 2:
+        # if require_two_maxima:
+        #     raise ValueError(f"Not enough VPG maxima points: {VPG_peaks_max},{vpg_max_idx}")
+        w = int(VPG_peaks_max[0])
+        # y/zは可能な範囲で埋める（クラスはreturnして中断するが、関数なので返す）
+        VPG_peaks_min = VPG_peaks_min[VPG_peaks_min >= VPG_peaks_max[0]]
+        y = int(VPG_peaks_min[0]) if len(VPG_peaks_min) else None
+        z = None
+        if return_debug:
+            return w, y, z, {"VPG_peaks_max": VPG_peaks_max, "VPG_peaks_min": VPG_peaks_min}
+        return w, y, z
+
+    VPG_peaks_min = VPG_peaks_min[VPG_peaks_min >= VPG_peaks_max[0]]
+
+    # class: self.wEditField = VPG_peaks_max[0]
+    #        self.yEditField = VPG_peaks_min[0]
+    #        self.zEditField = VPG_peaks_max[1]
+    w = int(VPG_peaks_max[0])
+    y = int(VPG_peaks_min[0]) if len(VPG_peaks_min) else None
+    z = int(VPG_peaks_max[1])
+
+    if return_debug:
+        return w, y, z, {"VPG_peaks_max": VPG_peaks_max, "VPG_peaks_min": VPG_peaks_min}
+    return w, y, z
+
+# ============================================================
+# 呼び出し側の保管（クラス相当の最小例）
+# ============================================================
+def compute_T2_5_from_segment(min1, min2):
+    # class: self.T2_5 = int(((min2 - min1 - 4) / 100) * 2.5)
+    return int(((min2 - min1 - 4) / 100) * 2.5)
+
+
+def compute_vpg_apg_jpg_from_seg(seg):
+    """
+    seg から class同様に VPG/APG/JPG を生成（平滑も同じ）
+    """
+    seg = np.asarray(seg)
+
+    vpg = np.diff(seg) * 1000
+    vpg = np.convolve(vpg, np.ones(6) / 6, mode='same')
+
+    apg = np.diff(vpg) * 1000
+    apg = np.convolve(apg, np.ones(8) / 8, mode='same')
+
+    jpg = np.diff(apg) * 1000
+    # class: rolling(window=85//8, center=True).mean()
+    win = max(1, 85 // 8)
+    # rolling meanの簡易版（端の扱いは完全一致しないが条件自体は同じように動く）
+    jpg = np.convolve(jpg, np.ones(win) / win, mode="same")
+
+    return vpg, apg, jpg
+
+
+
+
+
+def apg_points2(
+    apg,
+    peak,
+    w, y, z,
+    *,
+    jpg=None,
+    T2_5=None,
+    apg_maxima=None,
+    apg_minima=None,
+    apg_prominence=1.5,
+    apg_distance=7,
+    jpg_max_prominence=40,
+    jpg_min_prominence=50,
+    jpg_distance=6,
+    spg_prominence=400,
+    spg_distance=5,
+    return_f_N_D=False,
+    return_debug=False,
+    log = False
+):
+    """
+    元クラスの APG_c_d_test / cal_c_d / process_c_d_points をほぼそのまま維持しつつ、
+    添字落ち・空配列・不足要素のときに落ちないように「ガードだけ」追加した安全版。
+
+    返り値:
+      (a,b,c,d,e) もしくは (a,b,c,d,e,f,N,D)
+      計算不能な場合は (a,b,None,None,None, ...) のように None を混ぜて返す（落とさない）
+    """
+    apg = np.asarray(apg)
+
+    def _has(arr, i):
+        return arr is not None and len(arr) > i
+
+    def _i(arr, i, default=None):
+        return int(arr[i]) if _has(arr, i) else default
+
+    def _clip_idx(idx, n):
+        if idx is None:
+            return None
+        return int(np.clip(int(idx), 0, n - 1))
+
+    # --- apg_maxima/minima が無ければ生成（ここは前回同様）
+    if apg_maxima is None or apg_minima is None:
+        apg_maxima, _ = scipy.signal.find_peaks(apg, prominence=apg_prominence, distance=apg_distance)
+        apg_minima, _ = scipy.signal.find_peaks(-apg, prominence=apg_prominence, distance=apg_distance)
+
+        if len(apg_maxima) > 0:
+            apg_max_idx = np.argmax(apg[apg_maxima])
+            if apg_max_idx > 0:
+                apg_maxima = apg_maxima[apg_max_idx:]
+            apg_minima = apg_minima[apg_minima >= apg_maxima[0]]
+    # --- a,b は class通り先頭（不足ならNone）
+    a = _i(apg_maxima, 0, None)
+    b = _i(apg_minima, 0, None)
+    if a >= b:
+        a = b = None
+    # --- jpg は必須（無ければ生成するが、T2_5 は class想定的に必須）
+    if jpg is None:
+        jpg = np.diff(apg)*1000
+        win = max(1, 85 // 8)
+        jpg = np.convolve(jpg, np.ones(win) / win, mode="same")
+    jpg = np.asarray(jpg)
+
+    if T2_5 is None:
+        raise ValueError("T2_5 is required (same as class: computed in PlotButtonPushed).")
+
+    # ---- 出力（c,d,e,f,N,D）
+    c = d = e = f = N = D = None
+
+    # =========================
+    # process_c_d_points (安全化)
+    # =========================
+    def process_c_d_points(c_point, d_point, z_jpg):
+        # z_jpg[2],[3] が無いと落ちるのでガード
+        if z_jpg is None or len(z_jpg) < 4:
+            return None  # classならこの後もいろいろ破綻するので中断扱いが近い
+
+        cEditField = int(c_point)
+        dEditField = int(d_point)
+        eEditField = int(z_jpg[2])
+        fEditField = int(z_jpg[3])
+        NEditField = eEditField
+        DEditField = fEditField
+        return cEditField, dEditField, eEditField, fEditField, NEditField, DEditField
+
+    # =========================
+    # cal_c_d (安全化)
+    # =========================
+    def cal_c_d():
+        # 必要最低限: apg_maxima[0] / apg_minima[0] が無いとフィルタ基準すら作れない
+        if len(apg_maxima) == 0 or len(apg_minima) == 0:
+            # print("error 712")
+            return None
+
+        # z_apg フィルタ（z_apg[1] を使う分岐があるので len>=2 か後で確認）
+        z_apg = zerocrossing(apg)
+        z_apg = z_apg[z_apg >= int(apg_maxima[0]) - 2]
+
+        # JPG peaks/mins
+        max_peaks, _ = scipy.signal.find_peaks(jpg, prominence=jpg_max_prominence, distance=jpg_distance)
+        min_peaks, _ = scipy.signal.find_peaks(-jpg, prominence=jpg_min_prominence, distance=jpg_distance)
+
+        # max_peaks = max_peaks[max_peaks >= int(apg_maxima[0]) - 2]
+        # min_peaks = min_peaks[min_peaks >= int(apg_minima[0]) - 2]
+
+        max_value_jpg = max_peaks[max_peaks >= int(apg_maxima[0]) - 2][:5]
+        min_value_jpg = min_peaks[min_peaks >= int(apg_minima[0]) - 2]
+   
+        z_jpg = zerocrossing(jpg)
+        z_jpg = z_jpg[z_jpg >= int(apg_maxima[0]) - 2]
+
+        z_spg = zerocrossing(np.diff(jpg))
+        # print("z_spg before limit:", z_spg, apg_maxima)
+        z_spg = z_spg[z_spg >= int(apg_maxima[0]) - 2]
+
+        if len(z_jpg) >= 3:
+            z_spg = z_spg[z_spg <= z_jpg[2] + 2]
+        z_spg = z_spg[z_spg <= apg_maxima[1]+2]
+        if log:
+            print("z_spg", z_spg,"z_jpg", z_jpg,"jpg pks", max_value_jpg[:2],"jpg vlys", min_value_jpg)
+        # else: classは print するだけ（処理は続行）
+
+        spg_peaks, _ = scipy.signal.find_peaks(np.diff(jpg), prominence=spg_prominence, distance=spg_distance)
+        if len(spg_peaks) > 0 and spg_peaks[0] > apg_maxima[0]:
+            spg_peaks = spg_peaks[1:]
+
+        # ここから先は classの条件をそのまま使うが、
+        # 参照する添字が存在するかだけを「その場で」チェックして足りなければ None を返す。
+
+        # --- if len(min_value_jpg)>1 and jpg[min_value_jpg[1]] < 0
+        if len(min_value_jpg) > 1 and jpg[min_value_jpg[1]] < 0:
+
+            if len(z_spg) >= 3:
+                # spg_peaks[1] が必要
+                if len(spg_peaks) < 2:
+                    if log:
+                        print("error 2-a")
+                    return None
+                if log:
+                    print("debug:case 2")
+                return process_c_d_points(
+                    int(z_spg[2] - T2_5),
+                    int(z_spg[2] + T2_5),
+                    z_jpg
+                )
+
+            elif len(z_jpg) >= 6 and (z is not None) and (z_jpg[3] < int(z)):
+                if log:
+                    print("debug:case 5")
+                # z_jpg[2..5] が必要（len>=6は満たしてる）
+                cEditField = int(z_jpg[2])
+                dEditField = int(z_jpg[3])
+                eEditField = int(z_jpg[4])
+                fEditField = int(z_jpg[5])
+                NEditField = eEditField
+                DEditField = fEditField
+                return cEditField, dEditField, eEditField, fEditField, NEditField, DEditField
+
+            elif len(max_value_jpg) >= 1 and max_value_jpg[0] > min_value_jpg[0]:
+                # z_apg[1] が必要
+                if len(z_apg) < 2:
+                    if log:
+                        print("error 1-a")
+                    return None
+                if log:
+                    print("debug:case 1-a")
+                return process_c_d_points(int(max_value_jpg[0]), int(z_apg[1]), z_jpg)
+
+            elif len(max_value_jpg) >= 2 and max_value_jpg[1] > min_value_jpg[0]:
+                if len(z_apg) < 2:
+                    if log:
+                        print("error 1-ba")
+                    return None
+                if log:
+                    print("debug:case 1-ba")
+                return process_c_d_points(int(max_value_jpg[0]), int(z_apg[1]), z_jpg)
+
+            elif len(max_value_jpg) >= 3 and max_value_jpg[2] > min_value_jpg[0]:
+                if len(z_apg) < 2:
+                    if log:
+                        print("error 1-c")
+                    return None
+                if log:
+                    print("debug:case 1-c")
+                return process_c_d_points(int(max_value_jpg[1]), int(z_apg[1]), z_jpg)
+
+            else:
+                # Default: apg_maxima[1], apg_minima[1] が必要
+                if len(apg_maxima) < 2 or len(apg_minima) < 2:
+                    if log:
+                        print("error default")
+                    return None
+                if log:
+                    print("debug:case default")
+                return process_c_d_points(int(apg_maxima[1]), int(apg_minima[1]), z_jpg)
+
+        # --- elif len(min_value_jpg)>1 and jpg[min_value_jpg[1]] > 0
+        elif len(min_value_jpg) > 1 and jpg[min_value_jpg[1]] > 0:
+
+            if len(apg_maxima) > 1 and apg[int(apg_maxima[1])] < 0:
+                # Case III: apg_maxima[1], apg_minima[1] が必要
+                if len(apg_minima) < 2:
+                    if log:
+                        print("error 3")
+                    return None
+                if log:
+                    print("debug:case 3")
+                return process_c_d_points(int(apg_maxima[1]), int(apg_minima[1]), z_jpg)
+
+            elif len(apg_maxima) > 1 and apg[int(apg_maxima[1])] >= 0:
+                # Case II: spg_peaks[1] が必要
+                if len(z_spg) < 3:
+                    if log:
+                        print("error 2+")
+                    # print("error 809")
+                    return None
+                if log:
+                    print("debug:case 2+")
+                return process_c_d_points(
+                    int(z_spg[2]- T2_5),
+                    int(z_spg[2] + T2_5),
+                    z_jpg
+                )
+            if log:
+                print("error default 2")
+            return None  # classには無いが、ここまで来たら何も返せないので安全にNone
+
+        elif len(min_value_jpg) == 1:
+            # print("error 820", max_peaks,min_peaks,apg_maxima,apg_minima,len(jpg))
+            # print("error 820", "jpg std", np.std(jpg), "max",np.max(jpg), "min", np.min(jpg))
+            if len(max_value_jpg) >= 1 and max_value_jpg[0] > min_value_jpg[0]:
+                # z_apg[1] が必要
+                if len(z_apg) < 2:
+                    if log:
+                        print("error 1-a-2")
+                    return None
+                if log:
+                    print("debug:case 1-a-2")
+                return process_c_d_points(int(max_value_jpg[0]), int(z_apg[1]), z_jpg)
+
+            elif len(max_value_jpg) >= 2 and max_value_jpg[1] > min_value_jpg[0]:
+                if len(z_apg) < 2:
+                    if log:
+                        print("error 1-ba-2")
+                    return None
+                if log:
+                    print("debug:case 1-ba-2")
+                return process_c_d_points(int(max_value_jpg[0]), int(z_apg[1]), z_jpg)
+
+            elif len(max_value_jpg) >= 3 and max_value_jpg[2] > min_value_jpg[0]:
+                if len(z_apg) < 2:
+                    if log:
+                        print("error 1-c-2")
+                    return None
+                if log:
+                    print("debug:case 1-c-2")
+                return process_c_d_points(int(max_value_jpg[1]), int(z_apg[1]), z_jpg)
+
+            
+            
+            if log:
+                print("error no jpg maxs")
+            return None
+        elif len(min_value_jpg) == 0:
+            if log:
+                print("error no jpg mins")
+            return None
+        else:
+            # Default case: apg_maxima[1], apg_minima[1] が必要
+            if len(apg_maxima) < 2 or len(apg_minima) < 2:
+                if log:
+                    print("error default2")
+                return None
+            if log:
+                print("debug:case default2")
+            return process_c_d_points(int(apg_maxima[1]), int(apg_minima[1]), z_jpg)
+
+    # =========================
+    # APG_c_d_test (安全化)
+    # =========================
+    if len(apg_maxima) > 1:
+
+        # if apg[apg_maxima[1]] > 0:
+        if apg[int(apg_maxima[1])] > 0:
+            out = cal_c_d()
+            if out is not None:
+                c, d, e, f, N, D = out
+
+        # elif apg[apg_maxima[1]] < 0 and (apg_maxima[1]-apg_minima[1]) < 20:
+        elif (apg[int(apg_maxima[1])] < 0 and
+              len(apg_minima) > 1 and  # ← ここだけガード（条件の意味は同じ、必要要素が無いなら判定不能）
+              (int(apg_maxima[1]) - int(apg_minima[1])) < 20):
+            if log:
+                print("debug:case 3+")
+            # class: maxima[2], minima[2] 参照があるのでガード
+            c = int(apg_maxima[1])
+            d = int(apg_minima[1])
+
+            e = _i(apg_maxima, 2, None)
+            f = _i(apg_minima, 2, None)
+            N = e
+            D = f
+
+        else:
+            out = cal_c_d()
+            if out is not None:
+                c, d, e, f, N, D = out
+
+    else:
+        out = cal_c_d()
+        if out is not None:
+            c, d, e, f, N, D = out
+
+    # --- デバッグ情報
+    debug = None
+    if return_debug:
+        debug = {
+            "apg_maxima": apg_maxima,
+            "apg_minima": apg_minima,
+            "T2_5": T2_5,
+            "w": w, "y": y, "z": z,
+            "jpg_len": len(jpg),
+            "peak": peak,
+        }
+
+    if return_f_N_D:
+        if return_debug:
+            return a, b, c, d, e, f, N, D, debug
+        return a, b, c, d, e, f, N, D
+
+    if return_debug:
+        return a, b, c, d, e, debug
+    return a, b, c, d, e
+
+
+def extract_apg_feat(cycle, vpg, peak, w, y, z, fs,ver2=False):
     """
     Extract features related to interest points of APG (one cycle).
 
@@ -519,56 +1014,140 @@ def extract_apg_feat(cycle, vpg, peak, w, y, z, fs):
     apg = np.diff(vpg)
     
     Tc = len(cycle)
-    
-    a, b, c, d, e = apg_points(apg,peak,w, y, z)
+    if ver2:
+        apg2 = np.diff(vpg)*1000000
+        apg2 = np.convolve(apg2, np.ones(6) / 6, mode='same')
+        T2_5 = int(((len(cycle) - 4) / 100) * 2.5)
+        a, b, c, d, e = apg_points2(apg2,peak,w, y, z,jpg=None,T2_5=T2_5,return_f_N_D=False)
+    else:
+        a, b, c, d, e = apg_points(apg,peak,w, y, z)
     apg_p = [a, b, c, d, e]
     apg_p_names = ['a', 'b', 'c', 'd', 'e']
     
     #apg amplitudes
-    feats += [apg[i] for i in apg_p]
-    feats_header += ['apg_'+i for i in apg_p_names]
+    # apg amplitudes
+    feats += [safe_idx(apg, i) for i in apg_p]
+    feats_header += [f'apg_{n}' for n in apg_p_names]
+
+    # ppg amplitudes
+    feats += [safe_idx(cycle, i, offset=2) if i is not None else np.nan for i in apg_p]
+    feats_header += [f'ppg_{n}' for n in apg_p_names]
+
     
-    #ppg amplitudes
-    feats += [cycle[i+2] for i in apg_p]
-    feats_header += ['ppg_'+i for i in apg_p_names]
+    # ratio apg
+    apg_a = safe_idx(apg, a)
+    feats += [safe_div(safe_idx(apg, i), apg_a) for i in apg_p[1:]]
+    feats_header += [f'ratio_apg_{n}' for n in apg_p_names[1:]]
+
+    # ratio ppg
+    ppg_a = safe_idx(cycle, a, offset=2) if a is not None else np.nan
+    feats += [safe_div(safe_idx(cycle, i, offset=2), ppg_a) for i in apg_p[1:]]
+    feats_header += [f'ratio_ppg_{n}' for n in apg_p_names[1:]]
+
     
-    #ratio amplitudes
-    feats += [apg[i]/apg[a] for i in apg_p[1:]]
-    feats_header += ['ratio_apg_'+i for i in apg_p_names[1:]]
-    
-    feats += [cycle[i+2]/cycle[a+2] for i in apg_p[1:]]
-    feats_header += ['ratio_ppg_'+i for i in apg_p_names[1:]]
-    
-    #Time apg points
-    feats += [a/fs,(b-a)/fs,(c-b)/fs,(d-c)/fs,(e-d)/fs]
-    feats_header += ['T_'+i for i in apg_p_names]
-    
-    feats += [a/Tc,(b-a)/Tc,(c-b)/Tc,(d-c)/Tc,(e-d)/Tc]
-    feats_header += ['T_'+i+'_norm' for i in apg_p_names]
-    
+    # Time apg points
+    feats += [
+        safe_div(a, fs),
+        safe_div(safe_diff(b, a), fs),
+        safe_div(safe_diff(c, b), fs),
+        safe_div(safe_diff(d, c), fs),
+        safe_div(safe_diff(e, d), fs),
+    ]
+    feats_header += [f'T_{n}' for n in apg_p_names]
+
+    feats += [
+        safe_div(a, Tc),
+        safe_div(safe_diff(b, a), Tc),
+        safe_div(safe_diff(c, b), Tc),
+        safe_div(safe_diff(d, c), Tc),
+        safe_div(safe_diff(e, d), Tc),
+    ]
+    feats_header += [f'T_{n}_norm' for n in apg_p_names]
+
     #Time apg points 2
-    feats += [(peak-a)/fs,(peak-b)/fs,(c-peak)/fs,(d-peak)/fs,(e-peak)/fs]
+    feats += [safe_div(safe_diff(peak,a), fs), safe_div(safe_diff(peak,b), fs), safe_div(safe_diff(c,peak), fs), safe_div(safe_diff(d,peak), fs), safe_div(safe_diff(e,peak), fs)]
     feats_header += ['T_peak_'+i for i in apg_p_names]
     
-    feats += [(peak-a)/Tc,(peak-b)/Tc,(c-peak)/Tc,(d-peak)/Tc,(e-peak)/Tc]
+    feats += [safe_div(safe_diff(peak,a), Tc), safe_div(safe_diff(peak,b), Tc), safe_div(safe_diff(c,peak), Tc), safe_div(safe_diff(d,peak), Tc), safe_div(safe_diff(e,peak), Tc)]
     feats_header += ['T_peak_'+i+'_norm' for i in apg_p_names]
-    
     # Aging Index
-    feats += [(apg[b]-apg[c]-apg[d]-apg[e])/apg[a]]
+    AI = safe_div(
+        safe_diff(safe_diff(safe_diff(safe_idx(apg, b), safe_idx(apg, c)), safe_idx(apg, d)), safe_idx(apg, e)),
+        safe_idx(apg, a)
+    )
+    feats += [AI]
     feats_header += ['AI']
-    
-    # Others ratios (taken from the article)
-    bd = (vpg[d+1] - vpg[b+1])/(d-b)
-    bcda = (apg[b] - apg[c] - apg[d])/apg[a]
-    sdoo = np.sum(vpg[peak:d+1]*vpg[peak:d+1])/np.sum(vpg*vpg)
-    
+
+    # Others ratios
+    if None in [b, d] or d == b:
+        bd = np.nan
+    else:
+        bd = safe_div(
+            safe_idx(vpg, d, offset=1) - safe_idx(vpg, b, offset=1),
+            d - b
+        )
+
+    bcda = safe_div(
+        safe_idx(apg, b) - safe_idx(apg, c) - safe_idx(apg, d),
+        safe_idx(apg, a)
+    )
+
+    if peak is None or d is None or peak >= d:
+        sdoo = np.nan
+    else:
+        num = np.sum(vpg[peak:d+1] ** 2)
+        den = np.sum(vpg ** 2)
+        sdoo = safe_div(num, den)
+
     feats += [bd, bcda, sdoo]
     feats_header += ['bd', 'bcda', 'sdoo']
-    
+
+    feats += [e]
+    feats_header += ['e']
     return feats_header, feats
 
+import numpy as np
 
-def extract_temp_feat(cycle, peak, fs):
+def is_invalid(x):
+    """None または np.nan を True"""
+    return x is None or (isinstance(x, float) and np.isnan(x))
+
+def safe_idx(arr, idx, offset=0):
+    """
+    idx が None / np.nan / 範囲外なら np.nan
+    offset は idx が有効なときだけ足す
+    """
+    if is_invalid(idx):
+        return np.nan
+
+    j = int(idx) + offset  # idx が float の場合に備えて int
+    if j < 0 or j >= len(arr):
+        return np.nan
+
+    val = arr[j]
+    if is_invalid(val):
+        return np.nan
+
+    return val
+
+
+def safe_div(num, den):
+    """None / np.nan / 0 を含む割り算を np.nan に"""
+    if is_invalid(num) or is_invalid(den):
+        return np.nan
+    if den == 0:
+        return np.nan
+    return num / den
+
+
+def safe_diff(x, y):
+    """x - y を安全に（None / nan 対応）"""
+    if is_invalid(x) or is_invalid(y):
+        return np.nan
+    return x - y
+
+
+def extract_temp_feat(cycle, peak, fs,ver2=False):
     """
     Extract temporal features related to interest points of VPG & APG of one cycle PPG.
 
@@ -601,46 +1180,56 @@ def extract_temp_feat(cycle, peak, fs):
     Td = len(cycle) - peak
     
     vpg = np.diff(cycle)
-    w, y, z = vpg_points(vpg, peak)
+    if ver2:
+        vpg2 = np.convolve(vpg*1000, np.ones(6) / 6, mode='same')
+        w,y,z = vpg_points2(vpg2,peak)
+    else:
+        w, y, z = vpg_points(vpg, peak)
     
+    feats_header_apg, feats_apg = extract_apg_feat(cycle, vpg, peak, w, y, z, fs,ver2=ver2)
     
+    if z is None:
+        # print("Z is None: replacing with e",feats_apg[-1],feats_apg,len(feats_apg))
+        z = feats_apg[-1]
+    feats_apg = feats_apg[:-1]  # z は除く
+    feats_header_apg = feats_header_apg[:-1]
     #Time from cycle start to first peak in VPG (steepest point)
     #steepest point == max value between start and peak
     Tsteepest = w
-    Steepest = vpg[w]
+    Steepest = safe_idx(vpg, w)
     
     TNegSteepest = y
     
     #TdiaRise. Max positive slope after 'peak'
-    TdiaRise = z
         
     #Greatest negative steepest (slope) from peak to end. (Slope, Time)
-    NegSteepest = vpg[TNegSteepest]
-    
+    NegSteepest = safe_idx(vpg, TNegSteepest)
+    TdiaRise = z
     # Amplitude to DiaRise
-    DiaRise = cycle[TdiaRise]
+    # print("TdiaRise",TdiaRise)
+    DiaRise = safe_idx(cycle, TdiaRise)
     # SlopeDiaRise
-    SteepDiaRise = vpg[TdiaRise]
-    
+    SteepDiaRise = safe_idx(vpg, TdiaRise)
+        
     #Time from Systolic peak to Diastolic Rise
-    TSystoDiaRise = TdiaRise - Ts
+    TSystoDiaRise = safe_diff(TdiaRise, Ts)
     
     #Time from Diastolic Rise to End
-    TdiaToEnd = Tc - TdiaRise
+    TdiaToEnd = safe_diff(Tc, TdiaRise)
     
     #Ratio between systolic peak and diastolic rise amplitude
     Ratio = cycle[peak]/DiaRise
     
     point_feat_name = ['Tc', 'Ts', 'Td', 'Tsteepest', 'Steepest', 'TNegSteepest', 'NegSteepest', 
             'TdiaRise', 'DiaRise', 'SteepDiaRise', 'TSystoDiaRise', 'TdiaToEnd', 'Ratio']
-    point_feat = [Tc/fs, Ts/fs, Td/fs, Tsteepest/fs, Steepest, TNegSteepest/fs, NegSteepest, 
-            TdiaRise/fs, DiaRise, SteepDiaRise, TSystoDiaRise/fs, TdiaToEnd/fs, Ratio]
+    point_feat = [safe_div(Tc, fs), safe_div(Ts, fs), safe_div(Td, fs), safe_div(Tsteepest, fs), Steepest, safe_div(TNegSteepest, fs), NegSteepest, 
+            safe_div(TdiaRise, fs), DiaRise, SteepDiaRise, safe_div(TSystoDiaRise, fs), safe_div(TdiaToEnd, fs), Ratio]
     
     #norm by cycle
     point_feat_name = point_feat_name + ['Ts_norm', 'Td_norm', 'Tsteepest_norm', 'TNegSteepest_norm',
                        'TdiaRise_norm', 'TSystoDiaRise_norm', 'TdiaToEnd_norm']
-    point_feat = point_feat + [Ts/Tc, Td/Tc, Tsteepest/Tc, TNegSteepest/Tc, 
-            TdiaRise/Tc, TSystoDiaRise/Tc, TdiaToEnd/Tc]
+    point_feat = point_feat + [safe_div(Ts, Tc), safe_div(Td, Tc), safe_div(Tsteepest, Tc), safe_div(TNegSteepest, Tc), 
+            safe_div(TdiaRise, Tc), safe_div(TSystoDiaRise, Tc), safe_div(TdiaToEnd, Tc)]
     
     #width_at_per
     width_names = []
@@ -653,10 +1242,10 @@ def extract_temp_feat(cycle, peak, fs):
                                'DW'+per_str, 'DW'+per_str+'_norm', 
                                'SWaddDW'+per_str, 'SWaddDW'+per_str+'_norm',
                                'DWdivSW'+per_str]
-        width_feats +=[SW/fs, SW/Tc,
-                        DW/fs, DW/Tc,
-                        (SW+DW)/fs, (SW+DW)/Tc,
-                        DW/SW]
+        width_feats +=[safe_div(SW, fs), safe_div(SW, Tc),
+                       safe_div(DW, fs), safe_div(DW, Tc),
+                        safe_div(SW+DW, fs), safe_div(SW+DW, Tc),
+                        safe_div(DW, SW)]
         
     point_feat_name += width_names
     point_feat += width_feats
@@ -667,18 +1256,24 @@ def extract_temp_feat(cycle, peak, fs):
     #AUC from max upslope point to systolic peak
     S2 = np.trapz(cycle[Tsteepest:peak]-min_val)
     #AUC from systolic peak to diastolic rise 
-    S3 = np.trapz(cycle[peak:TdiaRise]-min_val)
-    #AUC from diastolic rise to end of cycle
-    S4 = np.trapz(cycle[TdiaRise:]-min_val)
-    #AUC of systole area S1+S2
     AUCsys = S1+S2
-    #AUC of diastole area S3+S4
-    AUCdia = S3+S4
+    # print("TdiaRise in extract_temp_feat:",TdiaRise,feats_apg[-1])
+    if is_invalid(TdiaRise):
+        S3 = np.trapz(cycle[peak:]-min_val)
+        AUCdia = S3
+        S4 = np.nan
+    else: 
+        S3 = np.trapz(cycle[peak:TdiaRise]-min_val)
+        #AUC from diastolic rise to end of cycle
+        S4 = np.trapz(cycle[TdiaRise:]-min_val)
+        #AUC of systole area S1+S2
+        #AUC of diastole area S3+S4
+        AUCdia = S3+S4
     area_feat_name = ['S1','S2','S3','S4','AUCsys','AUCdia']
     area_feat = [S1,S2,S3,S4,AUCsys,AUCdia]
     
     area_feat_name += ['S1_norm','S2_norm','S3_norm','S4_norm','AUCsys_norm','AUCdia_norm']
-    area_feat += [S1/AUCsys,S2/AUCsys,S3/AUCdia,S4/AUCdia,AUCsys/(AUCsys+AUCdia),AUCdia/(AUCsys+AUCdia)]
+    area_feat += [S1/AUCsys,S2/AUCsys,safe_div(S3,AUCdia),safe_div(S4,AUCdia),AUCsys/(AUCsys+AUCdia),AUCdia/(AUCsys+AUCdia)]
     
     # SQI feats
     SQI_skew = skew(cycle,0.3)
@@ -686,14 +1281,11 @@ def extract_temp_feat(cycle, peak, fs):
     sqi_feat_name = ['SQI_skew','SQI_kurtosis']
     sqi_feat = [SQI_skew,SQI_kurtosis]
     
-    feat_name = point_feat_name + area_feat_name +sqi_feat_name
-    feat = point_feat + area_feat + sqi_feat
+    feat_name = point_feat_name + area_feat_name +sqi_feat_name + feats_header_apg
+    feat = point_feat + area_feat + sqi_feat + feats_apg
     
-    feats_header_apg, feats_apg = extract_apg_feat(cycle, vpg, peak, w, y, z, fs)
-    
-    feat_name += feats_header_apg
-    feat += feats_apg
-    
+
+    # print(feat_name, feat)
     return np.array(feat_name),np.array(feat)
 
 
@@ -1152,7 +1744,7 @@ class PPG:
             Indeces marking the extracted peaks.
         """
         # x: ppg signal
-        return find_peaks(self.data, scale=int(self.fs))
+        return pyampd.ampd.find_peaks(self.data, scale=int(self.fs))
 
     def vpg(self, **kwargs):
         """ Compute the 1st Derivative of the PPG.
@@ -1234,7 +1826,7 @@ class PPG:
         array 
             Indeces marking the diastolic notches.
         """
-        notches = find_peaks(-self.data, scale=int(self.fs))
+        notches = pyampd.ampd.find_peaks(-self.data, scale=int(self.fs))
         #notches = scipy.signal.find_peaks(-self.data, distance=35, height=-self.data.mean())[0]
         
         return notches    
@@ -1289,7 +1881,7 @@ class PPG:
             ppg4 = waveform_norm(self.ppg4())
             
         # get peaks and valleys
-        sys_peaks = find_peaks(self.data, scale=int(self.fs))
+        sys_peaks = pyampd.ampd.find_peaks(self.data, scale=int(self.fs))
         dia_notches = self.diastolic_notches()
         
         if one_cycle_sig:
@@ -1769,7 +2361,7 @@ def my_find_peaks(sig, fs, remove_start_end = True):
     """
 
     try:
-        pks = find_peaks(sig, fs)
+        pks = pyampd.ampd.find_peaks(sig, scale=int(fs))
         if remove_start_end:
             if pks[0] == 0: pks = pks[1:]
 
